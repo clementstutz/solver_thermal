@@ -9,6 +9,6 @@
  * - nombreRecu : Le nombre auquel la fonction ajoute 2
  * Valeur retournée : nombreRecu + 2
  */
-int stationary();
+int stationary(std::string const& fichier_inputs, std::string const& fichier_outputs);
 
 #endif // SOLVER_1D_STATIONARY_H_INCLUDED

@@ -1,12 +1,81 @@
+#include "tools.h"
 #include <iostream>
 #include <vector>
 #include <Eigen/Dense> // inclure la librairie Eigen
 #include <fstream>  //permet de gérer des flux d'entré/sortie avec des fichiers externes
+#include <chrono>
+
 
 using namespace Eigen;
 using namespace std;
 
-int stationary() {
+int reading_input(string const& fichier_input, double& l_x, int& n_x, double& T_W, double& T_E, double& R) {
+    //flux d'entré depuis un fichier
+    ifstream flux_entre(fichier_input.c_str());
+    string ligne;
+    string nom_variable;
+    double valeur_variable;
+    if (!flux_entre) {
+        cerr << "ERREUR: Impossible d'ouvrir le fichier '" << fichier_input << "' en lecture." << endl;
+        return 1;
+    }
+
+    while (getline(flux_entre, ligne))
+    {
+        flux_entre >> nom_variable;
+        flux_entre >> valeur_variable;
+        if (nom_variable == "l_x") {
+            l_x = valeur_variable;
+        }
+        else if (nom_variable == "n_x") {
+            n_x = valeur_variable;
+        }
+        else if (nom_variable == "T_W") {
+            T_W = valeur_variable;
+        }
+        else if (nom_variable == "T_E") {
+            T_E = valeur_variable;
+        }
+        else if (nom_variable == "R") {
+            R = valeur_variable;
+        }
+    }
+    
+    flux_entre.close();
+    return 0;
+}
+
+int writing_output(string const& fichier_output, double& l_x, int& n_x, double& T_W, double& T_E, double& R, VectorXd& x, VectorXd& T) {
+    // recuperation de la date
+    string current_time = get_current_time_formatted();
+
+    //flux de sorti vers un fichier
+    //string const fichier_output("output.out");
+    ofstream flux_sortie(fichier_output.c_str());
+    if (!flux_sortie) {
+        cerr << "ERREUR: Impossible d'ouvrir le fichier '" << fichier_output << "' en ecriture." << endl;
+        return 1;
+    }
+
+    flux_sortie << "Date : " << current_time << endl;
+    flux_sortie << "" << endl;
+    flux_sortie << "Input data used for the calculation :" << endl;
+    flux_sortie << "l_x " << l_x << endl;
+    flux_sortie << "n_x " << n_x << endl;
+    flux_sortie << "T_W " << T_W << endl;
+    flux_sortie << "T_E " << T_E << endl;
+    flux_sortie << "R " << R << endl;
+    flux_sortie << "" << endl;
+    flux_sortie << "Output of the calculation :" << endl;
+    flux_sortie << "x =" << endl << x << endl;
+    flux_sortie << "T = " << endl << T << endl;
+
+    flux_sortie.close();
+
+    return 0;
+}
+
+int stationary(string const& fichier_input, string const& fichier_output) {
     cout << "In stationary mode." << endl;
     double l_x{ 1 };  //longueur de la barre en [m]
     int n_x{ 2 }; //nb de volumes de contrôle selon x
@@ -14,46 +83,21 @@ int stationary() {
     double T_E{ 20 };  //conditions aux limites en E en [C°]
     double R{ 0.05 };  //diffusivité thermique R en [m^2/s] (R = Lambda/(rho*c)
 
-    //flux d'entré depuis un fichier
-    string const fichier_inputs("E:\\Visual_Studio_Projects\\Physique\\solver_thermique_test\\x64\\Debug\\inputs_stationary.txt");
-    ifstream mon_flux_entre(fichier_inputs.c_str());
-    string ligne;
-    string nom_variable;
-    double valeur_variable;
-    if (mon_flux_entre) {
-        while (getline(mon_flux_entre, ligne))
-        {
-            mon_flux_entre >> nom_variable;
-            mon_flux_entre >> valeur_variable;
-            if (nom_variable == "l_x") {
-                l_x = valeur_variable;
-            }
-            else if (nom_variable == "n_x") {
-                n_x = valeur_variable;
-            }
-            else if (nom_variable == "T_W") {
-                T_W = valeur_variable;
-            }
-            else if (nom_variable == "T_E") {
-                T_E = valeur_variable;
-            }
-            else if (nom_variable == "R") {
-                R = valeur_variable;
-            }
-        }
+    //reading the input data
+    int RETURN_reading_input = reading_input(fichier_input, l_x, n_x, T_W, T_E, R);
+    if (RETURN_reading_input != 0) {
+        return 1;
     }
-    else {
-        cout << "ERREUR: Impossible d'ouvrir le fichier '" << fichier_inputs << "' en lecture." << endl;
-    }
-    mon_flux_entre.close();
 
-    //def mesh
+    //def spatial mesh
     double dx{ l_x / static_cast<double>(n_x) };
-    /*vector<double> x(n_x);  //x est seulement pour faire de la visualisation
-    for (int i = 0; i < x.size(); i++) {
-        x[i] = dx/2 + i*dx;
-        cout << "x[i] = " << x[i] << endl;
-    }*/
+    VectorXd x(n_x + 2);  //x est seulement pour faire de la visualisation
+    x.setZero();
+    for (int i = 1; i < n_x + 1; i++) {
+        x(i) = dx / 2 + (i - 1) * dx;
+    }
+    x(n_x + 1) = l_x;
+    //cout << "x = " << endl << x << endl;
 
     //materiaux infos
     double R_w{ R };
@@ -95,21 +139,30 @@ int stationary() {
     }
     A(n_x - 1, n_x - 2) = a_W;
     A(n_x - 1, n_x - 1) = -(a_W + 2 * a_E);
-    cout << "A = " << endl << A << endl;
+    //cout << "A = " << endl << A << endl;
 
     //formation du vecteur [b]
     VectorXd b(n_x);
     b.setZero();
     b(0) = -2 * a_W * T_W;
     b(n_x - 1) = -2 * a_E * T_E;
-    cout << "b = " << endl << b << endl;
+    //cout << "b = " << endl << b << endl;
 
     //résolution du système d'équation [A][T]=[b]
-    VectorXd t(n_x);
-    t = A.fullPivLu().solve(b); // résoudre le système linéaire
+    // Inversion de A
+    MatrixXd A_inv(n_x, n_x);
+    A_inv = A.inverse();
+    VectorXd T(n_x);
+    //auto start_time = chrono::high_resolution_clock::now();
+    T = A_inv * b;
+    //auto end_time = chrono::high_resolution_clock::now();
+    //auto elapsed_time_ms = chrono::duration_cast<chrono::milliseconds>(end_time - start_time).count();
 
     cout << "Solution du systeme lineaire A*t=b :" << endl;
-    cout << "T = " << endl << t << endl; // afficher la solution
+    cout << "T = " << endl << T << endl;
+
+    int RETURN_writing_output = writing_output(fichier_output, l_x, n_x, T_W, T_E, R, x, T);
+
 
     return 0;
 }

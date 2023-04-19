@@ -1,0 +1,8 @@
+l_x 1
+n_x 5
+T_W 100
+T_E 20
+R 0.05
+t_final 1
+n_t 5
+T_init 30

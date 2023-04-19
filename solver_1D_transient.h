@@ -9,6 +9,6 @@
  * - nombreRecu : Le nombre auquel la fonction ajoute 2
  * Valeur retournée : nombreRecu + 2
  */
-int transient();
+int transient(std::string const& fichier_inputs, std::string const& fichier_outputs);
 
 #endif // SOLVER_1D_TRANSIENT_H_INCLUDED

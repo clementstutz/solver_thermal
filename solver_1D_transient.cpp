@@ -1,12 +1,126 @@
+#include "tools.h"
 #include <iostream>
 #include <vector>
 #include <Eigen/Dense> // inclure la librairie Eigen
 #include <fstream>  //permet de gérer des flux d'entré/sortie avec des fichiers externes
+#include <chrono>
+
 
 using namespace Eigen;
 using namespace std;
 
-int transient() {
+int reading_input(string const& fichier_input, double& l_x, int& n_x, double& T_W, double& T_E, double& R, double& t_final, int& n_t, double& T_init, double& taux_convergence) {
+    //flux d'entré depuis un fichier
+    ifstream flux_entre(fichier_input.c_str());
+    string ligne;
+    string nom_variable;
+    double valeur_variable;
+    if (!flux_entre) {
+        cerr << "ERREUR: Impossible d'ouvrir le fichier '" << fichier_input << "' en lecture." << endl;
+        return 1;
+    }
+
+    while (getline(flux_entre, ligne))
+    {
+        flux_entre >> nom_variable;
+        flux_entre >> valeur_variable;
+        if (nom_variable == "l_x") {
+            l_x = valeur_variable;
+        }
+        else if (nom_variable == "n_x") {
+            n_x = valeur_variable;
+        }
+        else if (nom_variable == "T_W") {
+            T_W = valeur_variable;
+        }
+        else if (nom_variable == "T_E") {
+            T_E = valeur_variable;
+        }
+        else if (nom_variable == "R") {
+            R = valeur_variable;
+        }
+        else if (nom_variable == "t_final") {
+            t_final = valeur_variable;
+        }
+        else if (nom_variable == "n_t") {
+            n_t = valeur_variable;
+        }
+        else if (nom_variable == "T_0") {
+            T_init = valeur_variable;
+        }
+        else if (nom_variable == "taux_convergence") {
+            taux_convergence = valeur_variable;
+        }
+    }
+    
+    flux_entre.close();
+    return 0;
+}
+
+int writing_output(string const& fichier_output, double& l_x, int& n_x, double& T_W, double& T_E, double& R, double& t_final, int& n_t, double& T_init, VectorXd& x, MatrixXd& T, VectorXd& t) {
+    // recuperation de la date
+    string current_time = get_current_time_formatted();
+
+    //flux de sorti vers un fichier
+    //string const fichier_output("output.out");
+    ofstream flux_sortie(fichier_output.c_str());
+    if (!flux_sortie) {
+        cerr << "ERREUR: Impossible d'ouvrir le fichier '" << fichier_output << "' en ecriture." << endl;
+        return 1;
+    }
+
+    flux_sortie << "Date : " << current_time << endl;
+    flux_sortie << "" << endl;
+    flux_sortie << "Input data used for the calculation :" << endl;
+    flux_sortie << "l_x " << l_x << endl;
+    flux_sortie << "n_x " << n_x << endl;
+    flux_sortie << "T_W " << T_W << endl;
+    flux_sortie << "T_E " << T_E << endl;
+    flux_sortie << "R " << R << endl;
+    flux_sortie << "t_final " << t_final << endl;
+    flux_sortie << "n_t " << n_t << endl;
+    flux_sortie << "T_init " << T_init << endl;
+    flux_sortie << "" << endl;
+    flux_sortie << "Output of the calculation :" << endl;
+    flux_sortie << "x =" << endl << x << endl;
+    flux_sortie << "t =" << endl << t << endl;
+    flux_sortie << "T = " << endl << T << endl;
+
+    flux_sortie.close();
+
+    return 0;
+}
+
+double error_global(VectorXd& v1, VectorXd& v2) {
+
+    double error{ 0 };
+
+    for (int i = 0; i < v1.size(); i++) {
+        error += (v2(i) - v1(i)) / v1(i);
+    }
+
+    return error /= v1.size();
+}
+
+int add_vec_to_mat(vector<vector<double>>& matrice, int& new_vec_size) {
+    // Ajoute un vecteur supplementaire au vecteur de vecteur matrice
+    matrice.resize(matrice.size() + 1);
+
+    //definition de la taille du vecteur ajoute
+    matrice[matrice.size() - 1].resize(new_vec_size);
+
+    //remplissage du nouveau vecteur
+    //for (int i = 0; i < new_vec_size; i++) {
+    //    //matrice_T[matrice_T_indice_size][i] = values[i];
+
+    //    //afichage du contenu du nouveau vecteur
+    //    //cout << matrice[matrice.size() - 1][i] << endl;
+    //}
+
+    return 0;
+}
+
+int transient(string const& fichier_input, string const& fichier_output) {
     cout << "In transient mode." << endl;
     double l_x{ 1 };  //longueur de la barre en [m]
     int n_x{ 2 }; //nb de volumes de contrôle selon x
@@ -16,70 +130,37 @@ int transient() {
     double t_final{ 1 }; //durée de la simulation en [s]
     int n_t{ 10 };  //nb de pas de temps
     double T_init{ 30 };  //température initiale de la barre
+    double taux_convergence{ 0.05 };
 
-    //flux d'entré depuis un fichier
-    string const fichier_inputs("E:\\Visual_Studio_Projects\\Physique\\solver_thermique_test\\x64\\Debug\\inputs_transient.txt");
-    ifstream mon_flux_entre(fichier_inputs.c_str());
-    string ligne;
-    string nom_variable;
-    double valeur_variable;
-    if (mon_flux_entre) {
-        while (getline(mon_flux_entre, ligne))
-        {
-            mon_flux_entre >> nom_variable;
-            mon_flux_entre >> valeur_variable;
-            if (nom_variable == "l_x") {
-                l_x = valeur_variable;
-            }
-            else if (nom_variable == "n_x") {
-                n_x = valeur_variable;
-            }
-            else if (nom_variable == "T_W") {
-                T_W = valeur_variable;
-            }
-            else if (nom_variable == "T_E") {
-                T_E = valeur_variable;
-            }
-            else if (nom_variable == "R") {
-                R = valeur_variable;
-            }
-            else if (nom_variable == "t_final") {
-                t_final = valeur_variable;
-            }
-            else if (nom_variable == "n_t") {
-                n_t = valeur_variable;
-            }
-            else if (nom_variable == "T_0") {
-                T_init = valeur_variable;
-            }
-        }
+    //reading the input data
+    int RETURN_reading_input = reading_input(fichier_input, l_x, n_x, T_W, T_E, R, t_final, n_t, T_init, taux_convergence);
+    if (RETURN_reading_input != 0) {
+        return 1;
     }
-    else {
-        cout << "ERREUR: Impossible d'ouvrir le fichier '" << fichier_inputs << "' en lecture." << endl;
-    }
-    mon_flux_entre.close();
 
-    //def mesh spatial
+    //def spatial mesh
     double dx{ l_x / static_cast<double>(n_x) };
-    /*vector<double> x(n_x);  //x est seulement pour faire de la visualisation
-    for (int i = 0; i < x.size(); i++) {
-        x[i] = dx/2 + i*dx;
-        cout << "x[i] = " << x[i] << endl;
-    }*/
-
-    //def mesh temporel
-    double dt{ t_final / static_cast<double>(n_t) };
-    VectorXd t(n_t);
-    t.setZero();
-    for (int i = 0; i < n_t; i++) {
-        t(i) = (i+1) * dt;
+    VectorXd x(n_x + 2);  //x est seulement pour faire de la visualisation
+    x.setZero();
+    for (int i = 1; i < n_x + 1; i++) {
+        x(i) = dx / 2 + (i - 1) * dx;
     }
-    cout << "t = " << endl << t << endl;
+    x(n_x + 1) = l_x;
+    //cout << "x = " << endl << x << endl;
+
+    //def temporal mesh
+    double dt{ t_final / static_cast<double>(n_t) };
+    VectorXd t(n_t+1);
+    t.setZero();
+    for (int i = 0; i < n_t+1; i++) {
+        t(i) = (i) * dt;
+    }
+    //cout << "t = " << endl << t << endl;
 
     VectorXd T_0(n_x);
     T_0.setOnes();
     T_0 *= T_init;
-    cout << "T_0 = " << endl << T_0 << endl;
+    //cout << "T_0 = " << endl << T_0 << endl;
 
     MatrixXd T(n_x, n_t + 1);
     T.setZero();
@@ -88,6 +169,15 @@ int transient() {
     }
     cout << "T = " << endl << T << endl;
 
+    vector<vector<double>> matrice_T(1); // crer un vecteur de vecteurs
+    matrice_T[matrice_T.size() - 1].resize(n_x);
+    cout << "matrice_T[" << matrice_T.size() - 1 << "][i] = " << endl;
+    for (int i = 0; i < n_x; i++) {
+        matrice_T[matrice_T.size() - 1][i] = T_0(i);
+        cout << matrice_T[matrice_T.size() - 1][i] << endl;
+    }
+
+    
 
     //materiaux infos
     double R_w{ R };
@@ -133,26 +223,53 @@ int transient() {
     }
     A(n_x - 1, n_x - 2) = -a_W;
     A(n_x - 1, n_x - 1) = a_P;
-    cout << "A = " << endl << A << endl;
+    //cout << "A = " << endl << A << endl;
 
-    FullPivLU<MatrixXd> lu(A); // Décomposition LU de A
+    // Décomposition LU de A
+    FullPivLU<MatrixXd> lu(A);
 
     //formation du vecteur [b]
     MatrixXd b(n_x, n_t);
     b.setOnes();
     for (int t = 0; t < n_t; t++) {
         b(0, t) = a_W * T_W + a_P0 * T(0, t);
-        for (int x = 1; x < n_x-1; x++) {
+        for (int x = 1; x < n_x - 1; x++) {
             b(x, t) = a_P0 * T(x, t);
         }
-        b(n_x-1, t) = a_P0 * T(n_x-1, t) + a_E * T_E;
+        b(n_x - 1, t) = a_P0 * T(n_x - 1, t) + a_E * T_E;
         //cout << "b = " << endl << b.col(t) << endl;
 
         //résolution du système d'équation [A][T]=[b]
-        T.col(t + 1) = lu.solve(b.col(t));
-    }
+        add_vec_to_mat(matrice_T, n_x);
+        
+        VectorXd T1(n_x);
+        T1 = lu.solve(b.col(t));
+        
+        cout << "matrice_T[" << matrice_T.size() - 1 << "][i] = " << endl;
+        for (int i = 0; i < n_x; i++) {
+            matrice_T[matrice_T.size() - 1][i] = T1(i);
+            cout << matrice_T[matrice_T.size() - 1][i] << endl;
+        }
 
-    cout << "b = " << endl << b << endl;
+
+        T.col(t + 1) = lu.solve(b.col(t));
+
+        VectorXd T_1(n_x);
+        T_1 = T.col(t);
+
+        VectorXd T_2(n_x);
+        T_2 = T.col(t + 1);
+
+        
+        double error{ 0 };
+        error = error_global(T_1, T_2);
+        if (error <= taux_convergence) {
+            cout << "has converged. error = " << error << endl;
+            break;
+        }
+        cout << "has NOT converged. error = " << error << endl;
+    }
+    //cout << "b = " << endl << b << endl;
     cout << "T = " << endl << T << endl;
 
     VectorXd T_W_vec(n_t + 1);
@@ -163,18 +280,20 @@ int transient() {
     T_E_vec.setOnes();
     T_E_vec *= T_E;
 
-    MatrixXd temperatures(n_x + 2, n_t + 1);
-    temperatures.setZero();
-    temperatures.row(0) = T_W_vec;
+    MatrixXd TT(n_x + 2, n_t + 1);
+    TT.setZero();
+    TT.row(0) = T_W_vec;
     for (int i = 1; i < n_x + 1; i++) {
-        for (int j = 0; j < n_t+1; j++) {
-            temperatures(i, j) = T(i-1, j);
+        for (int j = 0; j < n_t + 1; j++) {
+            TT(i, j) = T(i - 1, j);
         }
     }
-    temperatures.row(n_x + 1) = T_E_vec;
+    TT.row(n_x + 1) = T_E_vec;
 
     cout << "Solution du systeme lineaire A*t=b :" << endl;
-    cout << "temperatures = " << endl << temperatures << endl;
+    cout << "T = " << endl << TT << endl;
+
+    int RETURN_writing_output = writing_output(fichier_output, l_x, n_x, T_W, T_E, R, t_final,  n_t,  T_init, x, T, t);
 
     return 0;
 }
